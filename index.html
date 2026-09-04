@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Journal de trading</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0E1116;
+    --panel:#151A21;
+    --panel-2:#1B222B;
+    --border:#262E38;
+    --text:#E7EBF0;
+    --text-dim:#8A94A3;
+    --accent:#1D9E75;
+    --accent-dim:#123B2C;
+    --danger:#D85A4A;
+    --danger-dim:#3A211D;
+    --amber:#E0A63E;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Space Grotesk', sans-serif;
+    min-height:100vh;
+  }
+  .mono{font-family:'JetBrains Mono', monospace;}
+  #app{max-width:900px; margin:0 auto; padding:24px 20px 80px;}
+
+  /* ---- auth ---- */
+  #auth-screen{
+    max-width:380px; margin:80px auto; padding:32px;
+    background:var(--panel); border:1px solid var(--border); border-radius:16px;
+  }
+  #auth-screen h1{font-size:22px; font-weight:600; margin:0 0 4px;}
+  #auth-screen p.sub{color:var(--text-dim); font-size:14px; margin:0 0 24px;}
+  #auth-screen label{display:block; font-size:13px; color:var(--text-dim); margin:14px 0 6px;}
+  #auth-screen input{
+    width:100%; padding:10px 12px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:8px; color:var(--text); font-size:14px; font-family:inherit;
+  }
+  #auth-screen input:focus{outline:none; border-color:var(--accent);}
+  #auth-error{color:var(--danger); font-size:13px; margin-top:10px; min-height:0;}
+  .btn-primary{
+    width:100%; margin-top:20px; padding:11px; background:var(--accent); color:#08120D;
+    border:none; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; font-family:inherit;
+  }
+  .btn-primary:hover{background:#26B583;}
+  .link-btn{
+    background:none; border:none; color:var(--text-dim); font-size:13px; cursor:pointer;
+    text-decoration:underline; margin-top:16px; font-family:inherit; padding:0;
+  }
+
+  /* ---- header ---- */
+  header{display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;}
+  header h1{font-size:20px; font-weight:600; margin:0;}
+  header .email{color:var(--text-dim); font-size:13px;}
+  #logout-btn{
+    background:none; border:1px solid var(--border); color:var(--text-dim); padding:6px 12px;
+    border-radius:8px; font-size:13px; cursor:pointer; font-family:inherit;
+  }
+  #logout-btn:hover{border-color:var(--danger); color:var(--danger);}
+
+  /* ---- stats ---- */
+  #stats{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px;}
+  .stat-card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:14px;}
+  .stat-card .label{font-size:12px; color:var(--text-dim); margin-bottom:4px;}
+  .stat-card .value{font-size:22px; font-weight:600;}
+
+  /* ---- calendar ---- */
+  #cal-section{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:24px;}
+  #cal-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;}
+  #cal-header .month-label{font-size:16px; font-weight:600;}
+  #cal-header button{background:var(--panel-2); border:1px solid var(--border); color:var(--text); width:30px; height:30px; border-radius:8px; cursor:pointer;}
+  #cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+  .cal-dow{text-align:center; font-size:11px; color:var(--text-dim); padding-bottom:4px;}
+  .cal-day{
+    aspect-ratio:1; border-radius:8px; background:var(--panel-2); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; font-size:13px; cursor:pointer; position:relative;
+    border:1px solid transparent;
+  }
+  .cal-day:hover{border-color:var(--border);}
+  .cal-day.today{border-color:var(--text-dim);}
+  .cal-day.win{background:var(--accent-dim); color:var(--accent);}
+  .cal-day.loss{background:var(--danger-dim); color:var(--danger);}
+  .cal-day.empty{background:transparent; cursor:default;}
+  .cal-day .count{font-size:8px; opacity:0.8; margin-top:2px; letter-spacing:0.02em;}
+  #cal-legend{display:flex; gap:16px; margin-top:14px; font-size:12px; color:var(--text-dim);}
+  #cal-legend span{display:flex; align-items:center; gap:6px;}
+  .dot{width:8px; height:8px; border-radius:2px; display:inline-block;}
+
+  /* ---- trade list ---- */
+  #trades-section h2{font-size:16px; font-weight:600; margin:0 0 12px;}
+  #add-trade-btn{
+    background:var(--accent); color:#08120D; border:none; border-radius:8px; padding:9px 16px;
+    font-weight:600; font-size:13px; cursor:pointer; margin-bottom:16px; font-family:inherit;
+  }
+  .trade-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; margin-bottom:12px; cursor:pointer;
+  }
+  .trade-card:hover{border-color:var(--text-dim);}
+  .trade-top{display:flex; justify-content:space-between; align-items:flex-start;}
+  .trade-pair{font-weight:600; font-size:15px;}
+  .trade-date{color:var(--text-dim); font-size:12px; margin-top:2px;}
+  .trade-result{font-weight:600; font-size:13px; padding:4px 10px; border-radius:6px;}
+  .trade-result.pos{background:var(--accent-dim); color:var(--accent);}
+  .trade-result.neg{background:var(--danger-dim); color:var(--danger);}
+  #empty-state{color:var(--text-dim); font-size:14px; text-align:center; padding:40px 0;}
+
+  /* ---- modal ---- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none;
+    align-items:flex-start; justify-content:center; padding:24px 16px; overflow-y:auto; z-index:50;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:24px;
+    max-width:460px; width:100%; margin-top:20px;
+  }
+  .modal h3{font-size:17px; font-weight:600; margin:0 0 18px;}
+  .modal label{display:block; font-size:12px; color:var(--text-dim); margin:12px 0 6px;}
+  .modal input[type=text], .modal input[type=date], .modal input[type=number], .modal select, .modal textarea{
+    width:100%; padding:9px 11px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:8px; color:var(--text); font-size:14px; font-family:inherit;
+  }
+  .modal textarea{resize:vertical; min-height:60px;}
+  .row-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .checklist-item{display:flex; align-items:center; gap:10px; padding:6px 0; font-size:14px;}
+  .checklist-item input[type=checkbox]{width:17px; height:17px; accent-color:var(--accent); cursor:pointer;}
+  .checklist-item .del-item{margin-left:auto; background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:16px; padding:0 4px;}
+  #new-checklist-item{display:flex; gap:8px; margin-top:10px;}
+  #new-checklist-item input{flex:1;}
+  #new-checklist-item button{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text); width:36px;
+    border-radius:8px; cursor:pointer; font-size:16px;
+  }
+  .modal-actions{display:flex; gap:10px; margin-top:22px;}
+  .modal-actions button{flex:1; padding:10px; border-radius:8px; font-weight:600; font-size:14px; cursor:pointer; font-family:inherit; border:none;}
+  .btn-save{background:var(--accent); color:#08120D;}
+  .btn-cancel{background:var(--panel-2); color:var(--text-dim); border:1px solid var(--border) !important;}
+  .btn-delete{background:var(--danger-dim); color:var(--danger); margin-top:10px; width:100%; padding:9px; border-radius:8px; border:none; font-size:13px; cursor:pointer; font-family:inherit;}
+  #field-error{color:var(--danger); font-size:12px; margin-top:8px; min-height:0;}
+
+  @media (max-width:520px){
+    #stats{grid-template-columns:repeat(2,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<div id="auth-screen">
+  <h1 id="auth-title">Iniciar sesión</h1>
+  <p class="sub" id="auth-sub">Entrá a tu journal de trading.</p>
+  <label>Email</label>
+  <input type="text" id="auth-email" placeholder="nombre@email.com" />
+  <label>Contraseña</label>
+  <input type="password" id="auth-password" placeholder="••••••••" />
+  <div id="auth-error"></div>
+  <button class="btn-primary" id="auth-submit">Entrar</button>
+  <button class="link-btn" id="auth-toggle">¿No tenés cuenta? Registrate</button>
+</div>
+
+<div id="app" style="display:none;">
+  <header>
+    <h1>Journal de trading</h1>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <span class="email mono" id="user-email"></span>
+      <button id="logout-btn">Salir</button>
+    </div>
+  </header>
+
+  <div id="stats">
+    <div class="stat-card"><div class="label">Trades totales</div><div class="value mono" id="stat-total">0</div></div>
+    <div class="stat-card"><div class="label">Win rate</div><div class="value mono" id="stat-winrate">0%</div></div>
+    <div class="stat-card"><div class="label">R promedio</div><div class="value mono" id="stat-avgr">0</div></div>
+    <div class="stat-card"><div class="label">R acumulado</div><div class="value mono" id="stat-sumr">0</div></div>
+  </div>
+
+  <div id="cal-section">
+    <div id="cal-header">
+      <button id="cal-prev">‹</button>
+      <div class="month-label" id="cal-month-label"></div>
+      <button id="cal-next">›</button>
+    </div>
+    <div id="cal-grid"></div>
+    <div id="cal-legend">
+      <span><span class="dot" style="background:var(--accent);"></span>día ganador</span>
+      <span><span class="dot" style="background:var(--danger);"></span>día perdedor</span>
+    </div>
+  </div>
+
+  <div id="trades-section">
+    <button id="add-trade-btn">+ nuevo trade</button>
+    <h2>Historial</h2>
+    <div id="trade-list"></div>
+    <div id="empty-state" style="display:none;">Todavía no cargaste ningún trade.</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="trade-modal">
+  <div class="modal">
+    <h3 id="modal-title">Nuevo trade</h3>
+    <input type="hidden" id="trade-id" />
+
+    <div class="row-2">
+      <div>
+        <label>Fecha</label>
+        <input type="date" id="f-date" />
+      </div>
+      <div>
+        <label>Par / activo</label>
+        <input type="text" id="f-pair" placeholder="XAUUSD" />
+      </div>
+    </div>
+
+    <div class="row-2">
+      <div>
+        <label>Dirección</label>
+        <select id="f-direction">
+          <option value="compra">Compra</option>
+          <option value="venta">Venta</option>
+        </select>
+      </div>
+      <div>
+        <label>Resultado (R)</label>
+        <input type="number" step="0.1" id="f-result" placeholder="2.1 o -1" />
+      </div>
+    </div>
+
+    <label>Checklist</label>
+    <div id="modal-checklist"></div>
+    <div id="new-checklist-item">
+      <input type="text" id="f-new-item" placeholder="Agregar ítem a tildar" />
+      <button id="add-checklist-item">+</button>
+    </div>
+
+    <label>Emoción</label>
+    <select id="f-emotion">
+      <option value="">Sin especificar</option>
+      <option value="calma">Calma</option>
+      <option value="confianza">Confianza</option>
+      <option value="ansiedad">Ansiedad</option>
+      <option value="fomo">FOMO</option>
+      <option value="frustracion">Frustración</option>
+      <option value="euforia">Euforia</option>
+    </select>
+
+    <label>Notas</label>
+    <textarea id="f-notes" placeholder="¿Qué aprendiste de este trade?"></textarea>
+
+    <div id="field-error"></div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" id="modal-cancel">Cancelar</button>
+      <button class="btn-save" id="modal-save">Guardar</button>
+    </div>
+    <button class="btn-delete" id="modal-delete" style="display:none;">Eliminar trade</button>
+  </div>
+</div>
+
+<script>
+// ======================================================================
+// CONFIGURÁ ACÁ TUS CREDENCIALES DE SUPABASE
+// (Supabase > Project Settings > API)
+// ======================================================================
+const SUPABASE_URL = "https://kmknbdxzutbnvotlkpwg.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtta25iZHh6dXRibnZvdGxrcHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1MzY5NjksImV4cCI6MjEwNDExMjk2OX0.s-SvlZEjLMOmYCEwB0AfaYgRbhnUGPM3lDWrUhBHpMo";
+// ======================================================================
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const DEFAULT_CHECKLIST = [
+  "Seguí el setup",
+  "Señal confirmada",
+  "Respeté el SL/TP planeado",
+  "Entré por impulso"
+];
+
+let currentUser = null;
+let trades = [];            // [{...trade, checklist_items:[...]}]
+let calDate = new Date();   // mes que se está mostrando
+let editingModalItems = []; // checklist en edición dentro del modal
+
+// ---------------- AUTH ----------------
+
+let authMode = "login"; // "login" | "signup"
+
+document.getElementById("auth-toggle").addEventListener("click", () => {
+  authMode = authMode === "login" ? "signup" : "login";
+  document.getElementById("auth-title").textContent = authMode === "login" ? "Iniciar sesión" : "Crear cuenta";
+  document.getElementById("auth-sub").textContent = authMode === "login" ? "Entrá a tu journal de trading." : "Registrate para empezar tu journal.";
+  document.getElementById("auth-submit").textContent = authMode === "login" ? "Entrar" : "Crear cuenta";
+  document.getElementById("auth-toggle").textContent = authMode === "login" ? "¿No tenés cuenta? Registrate" : "¿Ya tenés cuenta? Iniciá sesión";
+  document.getElementById("auth-error").textContent = "";
+});
+
+document.getElementById("auth-submit").addEventListener("click", async () => {
+  const email = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const errEl = document.getElementById("auth-error");
+  errEl.textContent = "";
+
+  if (!email || !password) {
+    errEl.textContent = "Completá email y contraseña.";
+    return;
+  }
+
+  if (authMode === "login") {
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { errEl.textContent = traducirError(error.message); return; }
+  } else {
+    const { error } = await sb.auth.signUp({ email, password });
+    if (error) { errEl.textContent = traducirError(error.message); return; }
+    errEl.style.color = "var(--accent)";
+    errEl.textContent = "Cuenta creada. Si tu proyecto pide confirmación, revisá tu email antes de entrar.";
+  }
+});
+
+function traducirError(msg) {
+  if (msg.includes("Invalid login credentials")) return "Email o contraseña incorrectos.";
+  if (msg.includes("already registered")) return "Ese email ya está registrado.";
+  if (msg.includes("Password should be")) return "La contraseña debe tener al menos 6 caracteres.";
+  return msg;
+}
+
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  await sb.auth.signOut();
+});
+
+sb.auth.onAuthStateChange((event, session) => {
+  if (session && session.user) {
+    currentUser = session.user;
+    document.getElementById("auth-screen").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    document.getElementById("user-email").textContent = currentUser.email;
+    loadTrades();
+  } else {
+    currentUser = null;
+    document.getElementById("auth-screen").style.display = "block";
+    document.getElementById("app").style.display = "none";
+  }
+});
+
+// ---------------- DATA ----------------
+
+async function loadTrades() {
+  const { data, error } = await sb
+    .from("trades")
+    .select("*, checklist_items(*)")
+    .order("trade_date", { ascending: false });
+
+  if (error) { console.error(error); return; }
+  trades = data || [];
+  renderStats();
+  renderCalendar();
+  renderTradeList();
+}
+
+function renderStats() {
+  const total = trades.length;
+  const withResult = trades.filter(t => t.result_r !== null && t.result_r !== undefined);
+  const wins = withResult.filter(t => t.result_r > 0).length;
+  const winrate = withResult.length ? Math.round((wins / withResult.length) * 100) : 0;
+  const sumR = withResult.reduce((a, t) => a + Number(t.result_r), 0);
+  const avgR = withResult.length ? sumR / withResult.length : 0;
+
+  document.getElementById("stat-total").textContent = total;
+  document.getElementById("stat-winrate").textContent = winrate + "%";
+  document.getElementById("stat-avgr").textContent = avgR.toFixed(2);
+  const sumEl = document.getElementById("stat-sumr");
+  sumEl.textContent = (sumR >= 0 ? "+" : "") + sumR.toFixed(2) + "R";
+  sumEl.style.color = sumR >= 0 ? "var(--accent)" : "var(--danger)";
+}
+
+// ---------------- CALENDAR ----------------
+
+const DOW = ["D","L","M","M","J","V","S"];
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+document.getElementById("cal-prev").addEventListener("click", () => {
+  calDate.setMonth(calDate.getMonth() - 1);
+  renderCalendar();
+});
+document.getElementById("cal-next").addEventListener("click", () => {
+  calDate.setMonth(calDate.getMonth() + 1);
+  renderCalendar();
+});
+
+function renderCalendar() {
+  const year = calDate.getFullYear();
+  const month = calDate.getMonth();
+  document.getElementById("cal-month-label").textContent = `${MESES[month]} ${year}`;
+
+  const grid = document.getElementById("cal-grid");
+  grid.innerHTML = "";
+  DOW.forEach(d => {
+    const el = document.createElement("div");
+    el.className = "cal-dow";
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // agrupar trades por día del mes actual
+  const byDay = {};
+  trades.forEach(t => {
+    const d = t.trade_date;
+    if (!d) return;
+    const [y, m] = d.split("-").map(Number);
+    if (y === year && m === month + 1) {
+      byDay[d] = byDay[d] || [];
+      byDay[d].push(t);
+    }
+  });
+
+  for (let i = 0; i < firstDay; i++) {
+    const el = document.createElement("div");
+    el.className = "cal-day empty";
+    grid.appendChild(el);
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const dayTrades = byDay[dateStr] || [];
+    const el = document.createElement("div");
+    el.className = "cal-day";
+    if (dateStr === todayStr) el.classList.add("today");
+
+    if (dayTrades.length) {
+      const withR = dayTrades.filter(t => t.result_r !== null && t.result_r !== undefined);
+      const netR = withR.reduce((a, t) => a + Number(t.result_r), 0);
+      el.classList.add(netR >= 0 ? "win" : "loss");
+      const label = dayTrades.length === 1 ? "1 TRADE" : `${dayTrades.length} TRADES`;
+      el.innerHTML = `${day}<span class="count mono">${label}</span>`;
+    } else {
+      el.textContent = day;
+    }
+
+    el.addEventListener("click", () => {
+      if (dayTrades.length === 1) {
+        openModal(dayTrades[0]);
+      } else if (dayTrades.length > 1) {
+        document.getElementById("trade-list").scrollIntoView({ behavior: "smooth" });
+      } else {
+        openModal(null, dateStr);
+      }
+    });
+
+    grid.appendChild(el);
+  }
+}
+
+// ---------------- TRADE LIST ----------------
+
+function renderTradeList() {
+  const list = document.getElementById("trade-list");
+  const empty = document.getElementById("empty-state");
+  list.innerHTML = "";
+
+  if (!trades.length) {
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+
+  trades.forEach(t => {
+    const card = document.createElement("div");
+    card.className = "trade-card";
+    const r = t.result_r;
+    const hasR = r !== null && r !== undefined;
+    const resultClass = hasR ? (r >= 0 ? "pos" : "neg") : "";
+    const resultText = hasR ? (r >= 0 ? "+" : "") + Number(r).toFixed(2) + "R" : "—";
+
+    card.innerHTML = `
+      <div class="trade-top">
+        <div>
+          <div class="trade-pair">${escapeHtml(t.pair)} · ${t.direction}</div>
+          <div class="trade-date mono">${formatDate(t.trade_date)}</div>
+        </div>
+        <div class="trade-result ${resultClass} mono">${resultText}</div>
+      </div>
+    `;
+    card.addEventListener("click", () => openModal(t));
+    list.appendChild(card);
+  });
+}
+
+function formatDate(d) {
+  if (!d) return "";
+  const [y, m, day] = d.split("-");
+  return `${day}/${m}/${y}`;
+}
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ---------------- MODAL ----------------
+
+document.getElementById("add-trade-btn").addEventListener("click", () => openModal(null));
+document.getElementById("modal-cancel").addEventListener("click", closeModal);
+
+function openModal(trade, presetDate) {
+  document.getElementById("field-error").textContent = "";
+  document.getElementById("trade-id").value = trade ? trade.id : "";
+  document.getElementById("modal-title").textContent = trade ? "Editar trade" : "Nuevo trade";
+  document.getElementById("f-date").value = trade ? trade.trade_date : (presetDate || new Date().toISOString().slice(0,10));
+  document.getElementById("f-pair").value = trade ? trade.pair : "";
+  document.getElementById("f-direction").value = trade ? trade.direction : "compra";
+  document.getElementById("f-result").value = trade && trade.result_r !== null ? trade.result_r : "";
+  document.getElementById("f-emotion").value = trade ? (trade.emotion || "") : "";
+  document.getElementById("f-notes").value = trade ? (trade.notes || "") : "";
+  document.getElementById("modal-delete").style.display = trade ? "block" : "none";
+
+  if (trade && trade.checklist_items && trade.checklist_items.length) {
+    editingModalItems = trade.checklist_items
+      .slice()
+      .sort((a,b) => (a.position||0) - (b.position||0))
+      .map(i => ({ id: i.id, label: i.label, checked: i.checked }));
+  } else {
+    editingModalItems = DEFAULT_CHECKLIST.map(label => ({ id: null, label, checked: false }));
+  }
+  renderModalChecklist();
+
+  document.getElementById("trade-modal").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("trade-modal").classList.remove("open");
+}
+
+function renderModalChecklist() {
+  const wrap = document.getElementById("modal-checklist");
+  wrap.innerHTML = "";
+  editingModalItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "checklist-item";
+    row.innerHTML = `
+      <input type="checkbox" ${item.checked ? "checked" : ""} data-idx="${idx}" class="chk-toggle" />
+      <span>${escapeHtml(item.label)}</span>
+      <button class="del-item" data-idx="${idx}" title="Eliminar ítem"><i>&times;</i></button>
+    `;
+    wrap.appendChild(row);
+  });
+
+  wrap.querySelectorAll(".chk-toggle").forEach(cb => {
+    cb.addEventListener("change", (e) => {
+      editingModalItems[e.target.dataset.idx].checked = e.target.checked;
+    });
+  });
+  wrap.querySelectorAll(".del-item").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      editingModalItems.splice(e.currentTarget.dataset.idx, 1);
+      renderModalChecklist();
+    });
+  });
+}
+
+document.getElementById("add-checklist-item").addEventListener("click", () => {
+  const input = document.getElementById("f-new-item");
+  const text = input.value.trim();
+  if (!text) {
+    input.style.borderColor = "var(--danger)";
+    return;
+  }
+  input.style.borderColor = "";
+  editingModalItems.push({ id: null, label: text, checked: false });
+  input.value = "";
+  renderModalChecklist();
+});
+
+document.getElementById("modal-save").addEventListener("click", async () => {
+  const errEl = document.getElementById("field-error");
+  errEl.textContent = "";
+
+  const id = document.getElementById("trade-id").value;
+  const date = document.getElementById("f-date").value;
+  const pair = document.getElementById("f-pair").value.trim();
+  const direction = document.getElementById("f-direction").value;
+  const resultRaw = document.getElementById("f-result").value;
+  const emotion = document.getElementById("f-emotion").value;
+  const notes = document.getElementById("f-notes").value.trim();
+
+  if (!date || !pair) {
+    errEl.textContent = "Completá al menos la fecha y el par.";
+    return;
+  }
+
+  const payload = {
+    user_id: currentUser.id,
+    trade_date: date,
+    pair,
+    direction,
+    result_r: resultRaw === "" ? null : Number(resultRaw),
+    emotion: emotion || null,
+    notes: notes || null
+  };
+
+  let tradeId = id;
+
+  if (id) {
+    const { error } = await sb.from("trades").update(payload).eq("id", id);
+    if (error) { errEl.textContent = "No se pudo guardar: " + error.message; return; }
+    await sb.from("checklist_items").delete().eq("trade_id", id);
+  } else {
+    const { data, error } = await sb.from("trades").insert(payload).select().single();
+    if (error) { errEl.textContent = "No se pudo guardar: " + error.message; return; }
+    tradeId = data.id;
+  }
+
+  if (editingModalItems.length) {
+    const rows = editingModalItems.map((item, idx) => ({
+      trade_id: tradeId,
+      label: item.label,
+      checked: item.checked,
+      position: idx
+    }));
+    const { error: chkError } = await sb.from("checklist_items").insert(rows);
+    if (chkError) { errEl.textContent = "Trade guardado, pero falló el checklist: " + chkError.message; }
+  }
+
+  closeModal();
+  loadTrades();
+});
+
+document.getElementById("modal-delete").addEventListener("click", async () => {
+  const id = document.getElementById("trade-id").value;
+  if (!id) return;
+  await sb.from("trades").delete().eq("id", id);
+  closeModal();
+  loadTrades();
+});
+
+document.getElementById("trade-modal").addEventListener("click", (e) => {
+  if (e.target.id === "trade-modal") closeModal();
+});
+</script>
+</body>
+</html>

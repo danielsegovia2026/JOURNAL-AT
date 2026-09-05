@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root{
     --bg:#0E1116;
@@ -72,6 +73,13 @@
   .stat-card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:14px;}
   .stat-card .label{font-size:12px; color:var(--text-dim); margin-bottom:4px;}
   .stat-card .value{font-size:22px; font-weight:600;}
+
+  /* ---- chart ---- */
+  #chart-section{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:24px;}
+  #chart-section h2{font-size:16px; font-weight:600; margin:0 0 4px;}
+  #chart-section p.sub{color:var(--text-dim); font-size:12px; margin:0 0 14px;}
+  #chart-empty{color:var(--text-dim); font-size:13px; text-align:center; padding:30px 0;}
+  #chart-wrap{position:relative; height:220px;}
 
   /* ---- calendar ---- */
   #cal-section{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:24px;}
@@ -183,6 +191,15 @@
     <div class="stat-card"><div class="label">R acumulado</div><div class="value mono" id="stat-sumr">0</div></div>
   </div>
 
+  <div id="chart-section">
+    <h2>Evolución</h2>
+    <p class="sub">R acumulado a lo largo del tiempo</p>
+    <div id="chart-wrap">
+      <canvas id="equity-chart"></canvas>
+    </div>
+    <div id="chart-empty" style="display:none;">Cargá al menos 2 trades con resultado para ver el gráfico.</div>
+  </div>
+
   <div id="cal-section">
     <div id="cal-header">
       <button id="cal-prev">‹</button>
@@ -266,6 +283,14 @@
       <button id="add-checklist-item">+</button>
     </div>
 
+    <label>Screenshot</label>
+    <div id="screenshot-preview-wrap" style="display:none; margin-bottom:8px;">
+      <img id="screenshot-preview" style="max-width:100%; border-radius:8px; border:1px solid var(--border);" />
+      <button type="button" id="screenshot-remove" class="btn-delete" style="margin-top:6px;">Quitar screenshot</button>
+    </div>
+    <input type="file" id="f-screenshot" accept="image/*" style="font-size:13px; color:var(--text-dim);" />
+    <p id="screenshot-status" style="font-size:12px; color:var(--text-dim); margin:6px 0 0;"></p>
+
     <label>Emoción</label>
     <select id="f-emotion">
       <option value="">Sin especificar</option>
@@ -312,6 +337,9 @@ let currentUser = null;
 let trades = [];            // [{...trade, checklist_items:[...]}]
 let calDate = new Date();   // mes que se está mostrando
 let editingModalItems = []; // checklist en edición dentro del modal
+let pendingScreenshotFile = null;
+let currentScreenshotUrl = null;
+let removeScreenshotFlag = false;
 
 // ---------------- AUTH ----------------
 
@@ -384,8 +412,62 @@ async function loadTrades() {
   if (error) { console.error(error); return; }
   trades = data || [];
   renderStats();
+  renderChart();
   renderCalendar();
   renderTradeList();
+}
+
+let equityChart = null;
+
+function renderChart() {
+  const withResult = trades
+    .filter(t => t.result_r !== null && t.result_r !== undefined)
+    .slice()
+    .sort((a, b) => (a.trade_date + (a.created_at||"")).localeCompare(b.trade_date + (b.created_at||"")));
+
+  const wrap = document.getElementById("chart-wrap");
+  const empty = document.getElementById("chart-empty");
+
+  if (withResult.length < 2) {
+    wrap.style.display = "none";
+    empty.style.display = "block";
+    return;
+  }
+  wrap.style.display = "block";
+  empty.style.display = "none";
+
+  let acc = 0;
+  const labels = withResult.map(t => formatDate(t.trade_date));
+  const values = withResult.map(t => { acc += Number(t.result_r); return acc; });
+
+  const ctx = document.getElementById("equity-chart").getContext("2d");
+  const lineColor = values[values.length - 1] >= 0 ? "#1D9E75" : "#D85A4A";
+
+  if (equityChart) equityChart.destroy();
+  equityChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: lineColor,
+        backgroundColor: lineColor + "22",
+        fill: true,
+        tension: 0.25,
+        pointRadius: 2,
+        pointBackgroundColor: lineColor
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#8A94A3", maxRotation: 0, autoSkip: true, maxTicksLimit: 6 }, grid: { color: "#262E38" } },
+        y: { ticks: { color: "#8A94A3" }, grid: { color: "#262E38" } }
+      }
+    }
+  });
 }
 
 function renderStats() {
@@ -512,7 +594,7 @@ function renderTradeList() {
     card.innerHTML = `
       <div class="trade-top">
         <div>
-          <div class="trade-pair">${escapeHtml(t.pair)} · ${t.direction}</div>
+          <div class="trade-pair">${escapeHtml(t.pair)} · ${t.direction}${t.screenshot_url ? " 🖼️" : ""}</div>
           <div class="trade-date mono">${formatDate(t.trade_date)}${hasPips ? " · " + pipsText : ""}</div>
         </div>
         <div class="trade-result ${resultClass} mono">${resultText}</div>
@@ -534,6 +616,27 @@ function escapeHtml(s) {
 
 // ---------------- MODAL ----------------
 
+document.getElementById("f-screenshot").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  pendingScreenshotFile = file;
+  removeScreenshotFlag = false;
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById("screenshot-preview").src = reader.result;
+    document.getElementById("screenshot-preview-wrap").style.display = "block";
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById("screenshot-remove").addEventListener("click", () => {
+  pendingScreenshotFile = null;
+  removeScreenshotFlag = true;
+  currentScreenshotUrl = null;
+  document.getElementById("f-screenshot").value = "";
+  document.getElementById("screenshot-preview-wrap").style.display = "none";
+});
+
 document.getElementById("add-trade-btn").addEventListener("click", () => openModal(null));
 document.getElementById("modal-cancel").addEventListener("click", closeModal);
 
@@ -553,6 +656,18 @@ function openModal(trade, presetDate) {
   document.getElementById("f-emotion").value = trade ? (trade.emotion || "") : "";
   document.getElementById("f-notes").value = trade ? (trade.notes || "") : "";
   document.getElementById("modal-delete").style.display = trade ? "block" : "none";
+
+  pendingScreenshotFile = null;
+  removeScreenshotFlag = false;
+  currentScreenshotUrl = trade ? (trade.screenshot_url || null) : null;
+  document.getElementById("f-screenshot").value = "";
+  document.getElementById("screenshot-status").textContent = "";
+  if (currentScreenshotUrl) {
+    document.getElementById("screenshot-preview").src = currentScreenshotUrl;
+    document.getElementById("screenshot-preview-wrap").style.display = "block";
+  } else {
+    document.getElementById("screenshot-preview-wrap").style.display = "none";
+  }
 
   if (trade && trade.checklist_items && trade.checklist_items.length) {
     editingModalItems = trade.checklist_items
@@ -633,6 +748,26 @@ document.getElementById("modal-save").addEventListener("click", async () => {
     return;
   }
 
+  let screenshotUrl = removeScreenshotFlag ? null : currentScreenshotUrl;
+
+  if (pendingScreenshotFile) {
+    document.getElementById("screenshot-status").textContent = "Subiendo imagen...";
+    const ext = pendingScreenshotFile.name.split(".").pop();
+    const filePath = `${currentUser.id}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await sb.storage
+      .from("screenshots")
+      .upload(filePath, pendingScreenshotFile);
+
+    if (uploadError) {
+      errEl.textContent = "No se pudo subir el screenshot: " + uploadError.message;
+      document.getElementById("screenshot-status").textContent = "";
+      return;
+    }
+    const { data: publicData } = sb.storage.from("screenshots").getPublicUrl(filePath);
+    screenshotUrl = publicData.publicUrl;
+    document.getElementById("screenshot-status").textContent = "";
+  }
+
   const payload = {
     user_id: currentUser.id,
     trade_date: date,
@@ -645,7 +780,8 @@ document.getElementById("modal-save").addEventListener("click", async () => {
     result_pips: resultPipsRaw === "" ? null : Number(resultPipsRaw),
     result_r: resultRaw === "" ? null : Number(resultRaw),
     emotion: emotion || null,
-    notes: notes || null
+    notes: notes || null,
+    screenshot_url: screenshotUrl
   };
 
   let tradeId = id;
